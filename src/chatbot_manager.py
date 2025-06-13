@@ -1,0 +1,210 @@
+from .database_manager import DatabaseManager
+from .file_processor import FileProcessor
+import streamlit as st
+from typing import Dict, List, Optional
+
+class ChatbotManager:
+    def __init__(self):
+        self.file_processor = FileProcessor()
+        try:
+            self.db = DatabaseManager()
+        except Exception as e:
+            st.error(f"Database Connection failed : {str(e)}")
+            # Fallback to session state if database fails
+            if 'chatbots' not in st.session_state:
+                st.session_state.chatbots = {}
+            self.db = None
+
+    @property
+    def chatbots(self) -> Dict :
+        """Get all chatbots as a dictionary."""
+        if self.db:
+            # Convert database chatbots to dict format for compatibility
+            chatbot_names = self.db.get_all_chatbots()
+            chatbots_dict = {}
+            for name in chatbot_names:
+                chatbot_data = self.db.get_chatbot(name)
+                if chatbot_data:
+                    chatbots_dict[name] = chatbot_data
+            return chatbots_dict
+        else:
+            return st.session_state.chatbots
+    
+    def get_chatbot_list(self) -> List[str]:
+        """
+        Get list of all chatbot names.
+        
+        Returns:
+            List[str]: List of chatbot names
+        """
+        if self.db:
+            return self.db.get_all_chatbots()
+        else:
+            return list(st.session_state.chatbots.keys())
+
+    def create_chatbot(self, name: str, system_prompt: str, uploaded_files: List = None) -> bool:
+        """
+            Create a new chatbot with the given parameters.
+            
+            Args:
+                name: Unique name for the chatbot
+                system_prompt: System prompt to guide chatbot behavior
+                uploaded_files: List of uploaded files for knowledge base
+                
+            Returns:
+                bool: True if chatbot was created successfully, False otherwise
+        """
+        try:
+            # Process uploaded files for knowledge base
+            knowledge_base = []
+            if uploaded_files:
+                for uploaded_file in uploaded_files:
+                    try:
+                        processed_content = self.file_processor.process_file(uploaded_file)
+                        knowledge_base.append({
+                            'filename': uploaded_file.name,
+                            'content': processed_content,
+                            'type': uploaded_file.type
+                        })
+                    except Exception as e:
+                        st.warning(f"Could not process file {uploaded_file.name}: {str(e)}")
+
+
+            if self.db:
+                # Store in database
+                return self.db.create_chatbot(name, system_prompt, knowledge_base)
+            else:
+                # Fallback to session state
+                chatbot_data = {
+                    'name': name,
+                    'system_prompt': system_prompt,
+                    'knowledge_base': knowledge_base,
+                    'chat_history': []
+                }
+                st.session_state.chatbots[name] = chatbot_data
+                return True
+
+
+        except Exception as e:
+            st.error(f"Error creating chatbot: {str(e)}")
+            return False
+        
+    def get_chatbot(self, name: str) -> Optional[Dict]:
+        """
+        Get chatbot data by name.
+        
+        Args:
+            name: Name of the chatbot
+            
+        Returns:
+            Dict: Chatbot data or None if not found
+        """
+        if self.db:
+            return self.db.get_chatbot(name)
+        else:
+            return st.session_state.chatbots.get(name)
+        
+    def update_chatbot(self, name :str, system_prompt :str = None, knowledge_base :List = None) -> bool:
+        """
+        Update an existing chatbot.
+        
+        Args:
+            name: Name of the chatbot to update
+            system_prompt: New system prompt (optional)
+            knowledge_base: New knowledge base (optional)
+            
+        Returns:
+            bool: True if updated successfully, False otherwise
+        """
+
+        try:
+            if self.db:
+                return self.db.update_chatbot(name, system_prompt, knowledge_base)
+            else:
+                if name in st.session_state.chatbots:
+                    if system_prompt is not None:
+                        st.session_state.chatbots[name]['system_prompt'] = system_prompt
+                    if knowledge_base is not None:
+                        st.session_state.chatbots[name]['knowledge_base'] = knowledge_base
+                    return True
+                return False
+        except Exception as e:
+            st.error(f"Error updating chatbot: {str(e)}")
+            return False
+        
+    def clear_chat_history(self, chatbot_name: str):
+        """
+        Clear chat history for a specific chatbot.
+        
+        Args:
+            chatbot_name: Name of the chatbot
+        """
+        if self.db:
+            self.db.clear_chat_history(chatbot_name)
+        else:
+            if chatbot_name in st.session_state.chatbots:
+                st.session_state.chatbots[chatbot_name]['chat_history'] = []
+
+    def get_chat_history(self, chatbot_name: str) -> List[Dict]:
+        """
+        Get chat history for a specific chatbot.
+        
+        Args:
+            chatbot_name: Name of the chatbot
+            
+        Returns:
+            List[Dict]: Chat history
+        """
+
+        if self.db:
+            return self.db.get_chat_history(chatbot_name)
+        else:
+            if chatbot_name in st.session_state.chatbots:
+                return st.session_state.chatbots[chatbot_name].get('chat_history', [])
+            return []
+        
+    def update_chat_history(self, chatbot_name: str, user_message: str, bot_response: str):
+        """
+        Update chat history for a specific chatbot.
+        
+        Args:
+            chatbot_name: Name of the chatbot
+            user_message: User's message
+            bot_response: Bot's response
+        """
+
+        if self.db:
+            self.db.save_chat_message(chatbot_name, user_message, bot_response)
+        else:
+            # Fallback to session state
+            if chatbot_name in st.session_state.chatbots:
+                if 'chat_history' not in st.session_state.chatbots[chatbot_name]:
+                    st.session_state.chatbots[chatbot_name]['chat_history'] = []
+                
+                st.session_state.chatbots[chatbot_name]['chat_history'].append({
+                    'user': user_message,
+                    'bot': bot_response
+                })
+
+    def delete_chatbot(self, name: str) -> bool:
+        """
+        Delete a chatbot by name.
+        
+        Args:
+            name: Name of the chatbot to delete
+            
+        Returns:
+            bool: True if chatbot was deleted successfully, False otherwise
+        """
+
+        try:
+            if self.db:
+                return self.db.delete_chatbot(name)
+            else:
+                if name in st.session_state.chatbots:
+                    del st.session_state.chatbots[name]
+                    return True
+                return False
+        except Exception as e:
+            st.error(f"Error deleting chatbot: {str(e)}")
+            return False
