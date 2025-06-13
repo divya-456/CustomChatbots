@@ -5,3 +5,7 @@ env/
 # environment variables
 .streamlit/
 .streamlit/secrets.toml
+
+# Ignore all Python bytecode caches
+__pycache__/
+**/__pycache__/
