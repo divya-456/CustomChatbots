@@ -1,5 +1,7 @@
 import streamlit as st
 from typing import Dict, Optional, List
+from .weaviate_manager import WeaviateManager
+from .utils.generate_chunks import chunk_with_recursive_splitter
 
 
 def create_chatbot_form():
@@ -85,6 +87,7 @@ def handle_update_button( new_uploaded_files: List, chatbot_name: str, system_pr
                         })
                     except Exception as e:
                         st.warning(f"Could not process file {uploaded_file.name}: {str(e)}")
+
 
             # Update chatbot using the manager method
             success = st.session_state.chatbot_manager.update_chatbot(

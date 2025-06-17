@@ -1,11 +1,17 @@
 from .database_manager import DatabaseManager
 from .file_processor import FileProcessor
+from .utils.generate_chunks import chunk_with_recursive_splitter
+from.weaviate_manager import WeaviateManager
 import streamlit as st
 from typing import Dict, List, Optional
+
+
+
 
 class ChatbotManager:
     def __init__(self):
         self.file_processor = FileProcessor()
+        self.weaviate_manager = WeaviateManager()
         try:
             self.db = DatabaseManager()
         except Exception as e:
@@ -29,18 +35,6 @@ class ChatbotManager:
             return chatbots_dict
         else:
             return st.session_state.chatbots
-    
-    def get_chatbot_list(self) -> List[str]:
-        """
-        Get list of all chatbot names.
-        
-        Returns:
-            List[str]: List of chatbot names
-        """
-        if self.db:
-            return self.db.get_all_chatbots()
-        else:
-            return list(st.session_state.chatbots.keys())
 
     def create_chatbot(self, name: str, system_prompt: str, uploaded_files: List = None) -> bool:
         """
@@ -57,6 +51,7 @@ class ChatbotManager:
         try:
             # Process uploaded files for knowledge base
             knowledge_base = []
+            knowledge_base_chunks = []
             if uploaded_files:
                 for uploaded_file in uploaded_files:
                     try:
@@ -66,8 +61,24 @@ class ChatbotManager:
                             'content': processed_content,
                             'type': uploaded_file.type
                         })
+                        file_chunks = chunk_with_recursive_splitter(processed_content)
+                        
+                        for i,chunk in enumerate(file_chunks):
+                            knowledge_base_chunks.append({
+                                "filename": uploaded_file.name,
+                                "chunk_index": i,
+                                "content": chunk,
+                                "type": uploaded_file.type
+                            })
+                
+
                     except Exception as e:
                         st.warning(f"Could not process file {uploaded_file.name}: {str(e)}")
+
+                # Create embeddings and push to weaviate
+                
+                self.weaviate_manager.create_weaviate_class(chatbot_name = name)
+                self.weaviate_manager.push_chunks_to_weaviate(chatbot_name=name, chunks=knowledge_base_chunks)
 
 
             if self.db:
@@ -104,6 +115,18 @@ class ChatbotManager:
         else:
             return st.session_state.chatbots.get(name)
         
+    def get_chatbot_list(self) -> List[str]:
+        """
+        Get list of all chatbot names.
+        
+        Returns:
+            List[str]: List of chatbot names
+        """
+        if self.db:
+            return self.db.get_all_chatbots()
+        else:
+            return list(st.session_state.chatbots.keys())
+        
     def update_chatbot(self, name :str, system_prompt :str = None, knowledge_base :List = None) -> bool:
         """
         Update an existing chatbot.
@@ -118,6 +141,23 @@ class ChatbotManager:
         """
 
         try:
+
+            # Update knowledge base in weavaite
+            updated_knowledge_base_chunks = []
+            for file in knowledge_base:
+                file_chunks = chunk_with_recursive_splitter(file["content"])
+
+                for i,chunk in enumerate(file_chunks):
+                    updated_knowledge_base_chunks.append({
+                        "filename": file["filename"],
+                        "chunk_index": i,
+                        "content": chunk,
+                        "type": file["type"]
+                    })
+                
+            self.weaviate_manager.update_knowledge_base(name, updated_knowledge_base_chunks)
+            
+
             if self.db:
                 return self.db.update_chatbot(name, system_prompt, knowledge_base)
             else:
@@ -198,6 +238,9 @@ class ChatbotManager:
         """
 
         try:
+            # delete from weavaite
+            self.weaviate_manager.delete_chatbot(chatbot_name=name)
+
             if self.db:
                 return self.db.delete_chatbot(name)
             else:

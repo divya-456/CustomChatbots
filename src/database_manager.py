@@ -1,6 +1,6 @@
 from datetime import datetime,timezone
 from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 import streamlit as st
@@ -42,6 +42,7 @@ class DatabaseManager:
             pool_pre_ping=True,
             pool_recycle=500
         )
+        
         Base.metadata.create_all(self.engine)
         
         Session = sessionmaker(bind=self.engine)
@@ -52,7 +53,11 @@ class DatabaseManager:
 
         try:
             # Check if chatbot already exists
-            existing = self.session.query(Chatbot).filter_by(name=name, is_active=True).first()
+            existing = (
+                self.session.query(Chatbot)
+                .filter_by(name=name, is_active=True)
+                .first()
+            )
             if existing:
                 return False
             
@@ -76,7 +81,11 @@ class DatabaseManager:
     def get_all_chatbots(self) -> List[str]:
         """Get list of all active chatbot names."""
         try:
-            chatbots = self.session.query(Chatbot).filter_by(is_active=True).all()
+            chatbots = (
+                self.session.query(Chatbot)
+                .filter_by(is_active=True)
+                .all()
+            )
             return [chatbot.name for chatbot in chatbots]
             
         except Exception as e:
@@ -85,7 +94,11 @@ class DatabaseManager:
     def get_chatbot(self, name:str) -> Optional[Dict]:
         """Get chatbot by name."""
         try:
-            chatbot = self.session.query(Chatbot).filter_by(name=name, is_active=True).first()
+            chatbot = (
+                self.session.query(Chatbot)
+                .filter_by(name=name, is_active=True)
+                .first()
+            )
             if not chatbot:
                 return None
             
@@ -103,7 +116,11 @@ class DatabaseManager:
     def update_chatbot(self, name: str, system_prompt: str = None, knowledge_base: List[Dict] = None) -> bool:
         """Update an existing chatbot."""
         try:
-            chatbot = self.session.query(Chatbot).filter_by(name=name, is_active=True).first()
+            chatbot = (
+                self.session.query(Chatbot)
+                .filter_by(name=name, is_active=True)
+                .first()
+            )
             if not chatbot:
                 return False
             
@@ -124,7 +141,11 @@ class DatabaseManager:
     def clear_chat_history(self, chatbot_name: str):
         """Clear chat history for a chatbot."""
         try:
-            self.session.query(ChatMessage).filter_by(chatbot_name=chatbot_name).delete()
+            (
+                self.session.query(ChatMessage)
+                .filter_by(chatbot_name=chatbot_name)
+                .delete()
+            )
             self.session.commit()
             
         except Exception as e:
@@ -135,7 +156,12 @@ class DatabaseManager:
         """Get chat history for a chatbot."""
 
         try:
-            messages = self.session.query(ChatMessage).filter_by(chatbot_name=chatbot_name).order_by(ChatMessage.created_at.desc()).all()
+            messages = (
+                self.session.query(ChatMessage)
+                .filter_by(chatbot_name=chatbot_name)
+                .order_by(ChatMessage.created_at.desc())
+                .all()
+            )
             
             return [{
                 'user': msg.user_message,
@@ -148,7 +174,7 @@ class DatabaseManager:
         
     def save_chat_message(self, chatbot_name: str, user_message: str, bot_response: str):
         """Save a chat message to the database."""
-        
+
         try:
             message = ChatMessage(
                 chatbot_name=chatbot_name,
@@ -167,7 +193,12 @@ class DatabaseManager:
         """Soft delete a chatbot (mark as inactive)."""
 
         try:
-            chatbot = self.session.query(Chatbot).filter_by(name=name, is_active=True).first()
+            chatbot = (
+                self.session.query(Chatbot)
+                .filter_by(name=name, is_active=True)
+                .first()
+            )
+
             if not chatbot:
                 return False
             

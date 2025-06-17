@@ -1,10 +1,16 @@
 import streamlit as st
 from openai import OpenAI
 from .chatbot_manager import ChatbotManager
-from typing import Optional, Dict, List
+from .weaviate_manager import WeaviateManager
+from typing import Optional, Dict
+from .utils.get_base_path import get_base_path
+from .utils.render_response import render_response
+import os
+import re
 
 
 class ChatInterface:
+
     def __init__(self, chatbot_data: Optional[Dict]):
         """
             Initialize the chat interface for a specific chatbot.
@@ -38,6 +44,7 @@ class ChatInterface:
                 st.session_state[self.chat_key] = []
 
 
+    
 
 
     def render(self):
@@ -66,7 +73,7 @@ class ChatInterface:
                 with st.chat_message("user"):
                     st.write(message["user"])
                 with st.chat_message("assistant"):
-                    st.write(message["assistant"])
+                    render_response(message["assistant"])
 
         # Chat input
         if prompt := st.chat_input("Type your message here..."):
@@ -78,8 +85,8 @@ class ChatInterface:
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     try:
-                        response = self._generate_response(prompt)
-                        st.write(response)
+                        response = self._generate_response(chatbot_name, prompt)
+                        render_response(response)
 
                         # Add to chat history
                         st.session_state[chat_key].append({
@@ -93,7 +100,7 @@ class ChatInterface:
                             manager.update_chat_history(chatbot_name, prompt, response)
                         except:
                             pass  # Fallback to session state only
-                        
+
                     except Exception as e:
                         error_message = f"Sorry, I encountered an error: {str(e)}"
                         st.error(error_message)
@@ -106,7 +113,7 @@ class ChatInterface:
     
 
 
-    def _generate_response(self, user_message: str) -> str:
+    def _generate_response(self, chatbot_name: str, user_message: str) -> str:
         """
         Generate a response using OpenAI API with the chatbot's configuration.
         
@@ -133,10 +140,37 @@ class ChatInterface:
                 messages.append({"role": "user", "content": exchange["user"]})
                 messages.append({"role": "assistant", "content": exchange["assistant"]})
 
-            # get top-k from knowledge base vector db
+            weaviate_manager = WeaviateManager()
+
+            # get top-k from knowledge base vector db (k=10)
+            raw = weaviate_manager.fetch_relevant_chunks(chatbot_name=chatbot_name, user_query=user_message)
+
+            #re-filter chunks
+            filtered = [
+                item["content"] for item in raw
+                if item["distance"] <= 0.2
+            ]
+
+            # add this top-k and user query to a special prompt 
+            base_path = get_base_path()
+            file_path = os.path.join(base_path,"src","data","prompt.txt")
+
+            with open(file_path,"r") as prompt_file:
+                prompt = prompt_file.read()
+
+            formatted_chunks = "\n\n".join(
+                [f"{i+1}. {chunk}" for i, chunk in enumerate(filtered)]
+            )
+
+            final_prompt = (
+                prompt
+                .replace("{{user_query}}", user_message)
+                .replace("{{relevant_chunks}}",formatted_chunks)
+            )
+
 
             # Add current user message
-            messages.append({"role": "user", "content": user_message})
+            messages.append({"role": "user", "content": final_prompt})
 
             # Generate response using OpenAI
             # the newest OpenAI model is "gpt-4o-mini" which was released May 13, 2024.
