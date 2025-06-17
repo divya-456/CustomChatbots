@@ -148,7 +148,6 @@ class ChatInterface:
             #re-filter chunks
             filtered = [
                 item["content"] for item in raw
-                if item["distance"] <= 0.2
             ]
 
             # add this top-k and user query to a special prompt 

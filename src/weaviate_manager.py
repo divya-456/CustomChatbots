@@ -5,6 +5,9 @@ from weaviate.classes.query import MetadataQuery
 import streamlit as st
 from typing import List, Dict
 import uuid
+import os
+import json
+from .utils.get_base_path import get_base_path
 
 
 class WeaviateManager:
@@ -60,22 +63,45 @@ class WeaviateManager:
                     uuid=uuid.uuid4()
                 )
 
-    def fetch_relevant_chunks(self, chatbot_name, user_query, max_distance = 0.2, max_results = 10):
+    def fetch_relevant_chunks(self, chatbot_name, user_query, max_distance=0.2, max_results=20):
         class_name = f"Chatbot_{chatbot_name.replace(' ', '_')}"
-
         collection = self.client.collections.get(class_name)
 
         response = collection.query.near_text(
             query=user_query,
             limit=max_results,
-            return_metadata= MetadataQuery(distance=True),
-            distance=max_distance
+            return_metadata=MetadataQuery(distance=True),
+            distance=0.4
         )
 
-        return [{
-            "content" : obj.properties["content"],
-            "distance" : obj.metadata.distance
+        results = [{
+            "content": obj.properties["content"],
+            "distance": obj.metadata.distance
         } for obj in response.objects]
+
+        try:
+            # Build absolute path to save folder
+            result_save_path = os.path.abspath(
+                os.path.join(get_base_path(), "src", "data", "weaviate_response")
+            )
+
+            print("Save path:", result_save_path)
+            print("Writable?", os.access(result_save_path, os.W_OK))
+
+            os.makedirs(result_save_path, exist_ok=True)
+
+            # Safely build the file path
+            file_path = os.path.join(result_save_path, "relevant_chunks.json")
+
+            # Write to file
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2)
+            print("File saved at:", file_path)
+
+        except Exception as e:
+            print(f"Failed to write results: {e}")
+
+        return results
 
     def update_knowledge_base(self, chatbot_name: str, updated_knowledge_base: List):
 
