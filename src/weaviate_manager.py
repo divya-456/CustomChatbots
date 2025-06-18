@@ -71,7 +71,6 @@ class WeaviateManager:
             query=user_query,
             limit=max_results,
             return_metadata=MetadataQuery(distance=True),
-            distance=0.4
         )
 
         results = [{
